@@ -24,8 +24,16 @@ export default function Home() {
           <b>{d.open_leases}</b>
         </div>
         <div className="stat">
+          旁路在途
+          <b>{d.bypass_inflight}</b>
+        </div>
+        <div className="stat">
           冲突计数
           <b>{d.conflict_count}</b>
+        </div>
+        <div className="stat">
+          依赖不可用
+          <b>{d.datasets_unavailable}</b>
         </div>
         <div className="stat">
           上课中
@@ -36,6 +44,10 @@ export default function Home() {
           <b>{d.draft_sessions}</b>
         </div>
       </div>
+      <p className="hint">
+        旁路在途 = open 且带旁路标记的租约数，与「租约页 · 仅看旁路」过滤同源；
+        缺依赖开窗必落旁路标记并计入旁路在途，关窗同时减占用与旁路计数。
+      </p>
     </section>
   );
 }

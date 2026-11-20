@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
@@ -17,14 +19,31 @@ class CloseBody(BaseModel):
     lease_no: str
 
 
+def _lease_out(row) -> dict:
+    item = dict(row)
+    item["bypass"] = bool(item["bypass"])
+    try:
+        item["missing_deps"] = json.loads(item.get("missing_deps") or "[]")
+    except (TypeError, ValueError):
+        item["missing_deps"] = []
+    return item
+
+
 @router.get("/leases")
-def list_leases():
+def list_leases(bypass: int | None = None):
+    """租约快照。bypass=1 过滤即「旁路标记过滤」，
+
+    与总览旁路在途计数同源（同一张 leases 表同一谓词）。
+    """
     conn = connect()
     try:
-        rows = conn.execute(
-            "SELECT * FROM leases ORDER BY id DESC"
-        ).fetchall()
-        return [dict(r) for r in rows]
+        sql = "SELECT * FROM leases"
+        args: tuple = ()
+        if bypass is not None:
+            sql += " WHERE bypass=?"
+            args = (1 if bypass else 0,)
+        rows = conn.execute(sql + " ORDER BY id DESC", args).fetchall()
+        return [_lease_out(r) for r in rows]
     finally:
         conn.close()
 

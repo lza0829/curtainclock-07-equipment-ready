@@ -205,6 +205,28 @@ button:disabled {
   color: var(--danger);
 }
 
+.tag.bypass {
+  background: #fde68a;
+  color: #92400e;
+  margin-left: 4px;
+}
+
+.hint {
+  display: block;
+  color: #6b7a72;
+  margin-top: 4px;
+  font-size: 0.8rem;
+}
+
+.filter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.88rem;
+  margin-bottom: 8px;
+  cursor: pointer;
+}
+
 .msg {
   margin: 10px 0;
   padding: 10px 12px;

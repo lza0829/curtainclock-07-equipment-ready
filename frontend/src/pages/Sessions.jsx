@@ -32,7 +32,13 @@ export default function Sessions() {
     setErr("");
     try {
       const r = await api.openLease(code);
-      setMsg(`已开窗，租约 ${r.lease_no}；在途租约 ${r.open_leases}`);
+      setMsg(
+        r.bypass
+          ? `已开窗（缺依赖旁路），租约 ${r.lease_no}；缺失依赖：${r.missing_deps.join(
+              "、"
+            )}；旁路在途 ${r.bypass_inflight}`
+          : `已开窗，租约 ${r.lease_no}；在途租约 ${r.open_leases}`
+      );
       await load();
     } catch (e) {
       setErr(e.message);
@@ -51,52 +57,79 @@ export default function Sessions() {
             <th>批窗</th>
             <th>时段</th>
             <th>算力槽 / 执行器</th>
+            <th>依赖数据集</th>
             <th>就绪</th>
             <th>状态</th>
             <th></th>
           </tr>
         </thead>
         <tbody>
-          {rows.map((r) => (
-            <tr key={r.code}>
-              <td>
-                <div>{r.title}</div>
-                <small>{r.code}</small>
-              </td>
-              <td>
-                {r.day}
-                <br />
-                {fmtMin(r.start_min)}–{fmtMin(r.end_min)}
-              </td>
-              <td>
-                {r.room_code}
-                <br />
-                {r.teacher_code}
-              </td>
-              <td>
-                {r.readiness?.ready ? (
-                  <span className="tag live">就绪</span>
-                ) : (
-                  <span className="tag bad">
-                    {(r.readiness?.reasons || []).join("；") || "未就绪"}
+          {rows.map((r) => {
+            const deps = r.readiness?.deps || [];
+            const missing = r.readiness?.missing_deps || [];
+            const resourceBlocked =
+              (r.readiness?.resource_reasons || []).length > 0;
+            return (
+              <tr key={r.code}>
+                <td>
+                  <div>{r.title}</div>
+                  <small>{r.code}</small>
+                </td>
+                <td>
+                  {r.day}
+                  <br />
+                  {fmtMin(r.start_min)}–{fmtMin(r.end_min)}
+                </td>
+                <td>
+                  {r.room_code}
+                  <br />
+                  {r.teacher_code}
+                </td>
+                <td>
+                  {deps.length === 0
+                    ? "—"
+                    : deps.map((d) => (
+                        <span
+                          key={d.code}
+                          className={`tag ${d.available ? "" : "bad"}`}
+                          title={d.name}
+                        >
+                          {d.code}
+                          {d.available ? "" : " 缺"}
+                        </span>
+                      ))}
+                </td>
+                <td>
+                  {r.readiness?.ready ? (
+                    <span className="tag live">就绪</span>
+                  ) : (
+                    <>
+                      <span className="tag bad">
+                        {(r.readiness?.reasons || []).join("；") || "未就绪"}
+                      </span>
+                      {missing.length > 0 && !resourceBlocked && (
+                        <small className="hint">缺依赖：开窗将落旁路标记</small>
+                      )}
+                    </>
+                  )}
+                </td>
+                <td>
+                  <span className={`tag ${r.status}`}>
+                    {statusLabel[r.status] || r.status}
                   </span>
-                )}
-              </td>
-              <td>
-                <span className={`tag ${r.status}`}>
-                  {statusLabel[r.status] || r.status}
-                </span>
-              </td>
-              <td>
-                <button
-                  disabled={r.status !== "draft"}
-                  onClick={() => openLease(r.code)}
-                >
-                  开窗占用
-                </button>
-              </td>
-            </tr>
-          ))}
+                  {r.bypass && <span className="tag bypass">旁路</span>}
+                </td>
+                <td>
+                  <button
+                    disabled={r.status !== "draft"}
+                    onClick={() => openLease(r.code)}
+                  >
+                    开窗占用
+                  </button>
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </section>

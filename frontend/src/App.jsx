@@ -11,7 +11,7 @@ export default function App() {
       <header className="hero">
         <h1 className="brand">幕窗钟</h1>
         <p>
-          批窗就绪后开窗占用算力槽与执行器，关窗释放；冲突写入水位，数字同源可核。
+          批窗声明上游依赖数据集：缺依赖开窗走旁路并同事务落标记租约，旁路在途与标记过滤同源；关窗同时减占用与旁路计数，冲突写入水位，数字同源可核。
         </p>
       </header>
 
@@ -20,7 +20,7 @@ export default function App() {
           总览
         </NavLink>
         <NavLink to="/sessions">批窗</NavLink>
-        <NavLink to="/resources">算力槽与执行器</NavLink>
+        <NavLink to="/resources">资源与台账</NavLink>
         <NavLink to="/leases">租约</NavLink>
         <NavLink to="/conflicts">冲突</NavLink>
       </nav>

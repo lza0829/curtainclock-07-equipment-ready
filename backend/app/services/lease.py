@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from datetime import datetime, timezone
 
@@ -29,6 +30,17 @@ def _conflict_mode(conn: sqlite3.Connection) -> str:
     return row["value"] if row else "reject"
 
 
+def bypass_inflight(conn: sqlite3.Connection) -> int:
+    """旁路在途计数：与租约旁路标记同源（status='open' 且 bypass=1 的租约数）。
+
+    不另设水位——开窗落标记租约、关窗改租约状态都与计数同事务，
+    总览读数与「租约页·仅看旁路」过滤天然一致，不会漂移。
+    """
+    return conn.execute(
+        "SELECT COUNT(*) c FROM leases WHERE status='open' AND bypass=1"
+    ).fetchone()["c"]
+
+
 def open_lease(conn: sqlite3.Connection, session_code: str) -> dict:
     session = conn.execute(
         "SELECT * FROM sessions WHERE code=?", (session_code,)
@@ -41,14 +53,15 @@ def open_lease(conn: sqlite3.Connection, session_code: str) -> dict:
         raise ValueError("批窗已结束")
 
     ready = readiness(conn, session)
-    if not ready["ready"]:
+    if ready["resource_reasons"]:
+        # 硬冲突（算力槽/执行器停用或被占）：拒绝开窗，落冲突水位，不落租约
         mode = _conflict_mode(conn)
-        for reason in ready["reasons"]:
-            kind = "room" if "算力槽" in reason else ("teacher" if "执行器" in reason else "ready")
+        for reason in ready["resource_reasons"]:
+            kind = "room" if "算力槽" in reason else "teacher"
             resource = (
                 session["room_code"]
                 if kind == "room"
-                else (session["teacher_code"] if kind == "teacher" else session_code)
+                else session["teacher_code"]
             )
             conn.execute(
                 "INSERT INTO conflicts(kind, session_code, resource_code, day, start_min, end_min, reason, created_at) "
@@ -68,7 +81,7 @@ def open_lease(conn: sqlite3.Connection, session_code: str) -> dict:
         # 底座贯彻 reject（冲突落库后由调用方提交）；候补算力槽留给后续题
         return {
             "ok": False,
-            "error": "；".join(ready["reasons"]),
+            "error": "；".join(ready["resource_reasons"]),
             "conflict_mode": mode,
         }
 
@@ -89,11 +102,16 @@ def open_lease(conn: sqlite3.Connection, session_code: str) -> dict:
     ):
         raise ValueError("资源刚被占用，开窗失败")
 
+    # 全局架构 = 缺依赖旁路占用：缺依赖不拒开窗，但必须同事务——
+    # 落 open 租约、批窗/租约打旁路标记并快照缺失依赖、旁路在途计数随标记租约 +1。
+    # 齐套窗则正常开窗（bypass=0）。缺依赖却无标记的静默成功在结构上不可能。
+    missing = ready["missing_deps"]
+    bypass = 1 if missing else 0
     n = conn.execute("SELECT COUNT(*) c FROM leases").fetchone()["c"] + 1
     lease_no = f"L-{session['day'].replace('-', '')}-{n:04d}"
     conn.execute(
-        "INSERT INTO leases(lease_no, session_code, room_code, teacher_code, day, start_min, end_min, status, opened_at) "
-        "VALUES(?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO leases(lease_no, session_code, room_code, teacher_code, day, start_min, end_min, status, opened_at, bypass, missing_deps) "
+        "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
         (
             lease_no,
             session_code,
@@ -104,10 +122,13 @@ def open_lease(conn: sqlite3.Connection, session_code: str) -> dict:
             session["end_min"],
             "open",
             _now(),
+            bypass,
+            json.dumps(missing, ensure_ascii=False),
         ),
     )
     conn.execute(
-        "UPDATE sessions SET status='live' WHERE code=?", (session_code,)
+        "UPDATE sessions SET status='live', bypass=? WHERE code=?",
+        (bypass, session_code),
     )
     open_n = _bump(conn, "open_leases", 1)
     return {
@@ -116,6 +137,9 @@ def open_lease(conn: sqlite3.Connection, session_code: str) -> dict:
         "session_code": session_code,
         "status": "open",
         "open_leases": open_n,
+        "bypass": bool(bypass),
+        "missing_deps": missing,
+        "bypass_inflight": bypass_inflight(conn),
     }
 
 
@@ -135,9 +159,13 @@ def close_lease(conn: sqlite3.Connection, lease_no: str) -> dict:
         "UPDATE sessions SET status='done' WHERE code=?",
         (lease["session_code"],),
     )
+    # 占用与旁路计数同事务同减：open_leases 水位 -1，
+    # 旁路在途随该租约离开 open 态同步 -1（同源派生，无需另减）。
     open_n = _bump(conn, "open_leases", -1)
     return {
         "lease_no": lease_no,
         "status": "closed",
         "open_leases": open_n,
+        "was_bypass": bool(lease["bypass"]),
+        "bypass_inflight": bypass_inflight(conn),
     }

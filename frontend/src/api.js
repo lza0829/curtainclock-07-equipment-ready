@@ -21,8 +21,14 @@ export const api = {
   dashboard: () => req("/dashboard"),
   rooms: () => req("/rooms"),
   teachers: () => req("/teachers"),
+  datasets: () => req("/datasets"),
+  setDatasetAvailability: (code, available) =>
+    req(`/datasets/${code}/availability`, {
+      method: "POST",
+      body: JSON.stringify({ available }),
+    }),
   sessions: () => req("/sessions"),
-  leases: () => req("/leases"),
+  leases: (bypassOnly = false) => req(`/leases${bypassOnly ? "?bypass=1" : ""}`),
   conflicts: () => req("/conflicts"),
   openLease: (session_code) =>
     req("/leases/open", { method: "POST", body: JSON.stringify({ session_code }) }),
